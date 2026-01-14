@@ -1,0 +1,24 @@
+name: Mirror virglrenderer from GitLab
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PAT_B64: ${{ secrets.PAT_B64 }}
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mirror from GitLab to GitHub
+        run: |
+          GH_TOKEN=$(echo "$PAT_B64" | base64 -d)
+          git clone --mirror https://gitlab.freedesktop.org/virgl/virglrenderer.git virglrenderer.git
+          cd virglrenderer.git
+          git remote add github "https://x-access-token:${GH_TOKEN}@github.com/startergo/virglrenderer.git"
+          git push github --mirror --force
