@@ -10,6 +10,8 @@ permissions:
 
 env:
   PAT_B64: ${{ secrets.PAT_B64 }}
+  SOURCE_REPO: https://gitlab.freedesktop.org/virgl/virglrenderer.git
+  TARGET_REPO: https://github.com/startergo/virglrenderer.git
 
 jobs:
   mirror:
@@ -17,8 +19,43 @@ jobs:
     steps:
       - name: Mirror from GitLab to GitHub
         run: |
-          GH_TOKEN=$(echo "$PAT_B64" | base64 -d)
-          git clone --mirror https://gitlab.freedesktop.org/virgl/virglrenderer.git virglrenderer.git
+          set -euo pipefail
+
+          if [[ -z "${PAT_B64:-}" ]]; then
+            echo "Missing secret PAT_B64; configure it in repo secrets." >&2
+            exit 1
+          fi
+
+          GH_TOKEN="$(printf '%s' "$PAT_B64" | base64 --decode | tr -d '\n')"
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "PAT_B64 decoded to an empty token; verify the secret value." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::$GH_TOKEN"
+
+          echo "Source repo: $SOURCE_REPO"
+          echo "Target repo: $TARGET_REPO"
+
+          SRC_HEAD="$(git ls-remote --symref "$SOURCE_REPO" HEAD | awk '/^ref:/ {print $2}' | sed 's#refs/heads/##')"
+          SRC_HEAD_SHA="$(git ls-remote "$SOURCE_REPO" "HEAD" | awk '{print $1}')"
+          echo "Source default branch: ${SRC_HEAD:-unknown}"
+          echo "Source HEAD SHA: ${SRC_HEAD_SHA:-unknown}"
+
+          git clone --mirror "$SOURCE_REPO" virglrenderer.git
           cd virglrenderer.git
-          git remote add github "https://x-access-token:${GH_TOKEN}@github.com/startergo/virglrenderer.git"
-          git push github --mirror --force
+
+          ORIGIN_URL="$(git remote get-url origin)"
+          echo "Cloned origin URL: $ORIGIN_URL"
+          if [[ "$ORIGIN_URL" != "$SOURCE_REPO" ]]; then
+            echo "Origin URL mismatch; expected $SOURCE_REPO" >&2
+            exit 1
+          fi
+
+          echo "GitLab mirror refs (sample):"
+          git for-each-ref --format='%(refname:short)' refs/heads | head -n 10 || true
+
+          AUTH_B64="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)"
+          GIT_TERMINAL_PROMPT=0 \
+            git -c http.extraHeader="AUTHORIZATION: basic $AUTH_B64" \
+            push "$TARGET_REPO" --mirror --force
