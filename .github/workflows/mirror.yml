@@ -12,6 +12,9 @@ env:
   PAT_B64: ${{ secrets.PAT_B64 }}
   SOURCE_REPO: https://gitlab.freedesktop.org/virgl/virglrenderer.git
   TARGET_REPO: https://github.com/startergo/virglrenderer.git
+  TARGET_OWNER: startergo
+  TARGET_NAME: virglrenderer
+  TARGET_DEFAULT_BRANCH: main
 
 jobs:
   mirror:
@@ -59,3 +62,13 @@ jobs:
           GIT_TERMINAL_PROMPT=0 \
             git -c http.extraHeader="AUTHORIZATION: basic $AUTH_B64" \
             push "$TARGET_REPO" --mirror --force
+
+          curl -fsSL \
+            -X PATCH \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$TARGET_OWNER/$TARGET_NAME" \
+            -d "{\"default_branch\":\"$TARGET_DEFAULT_BRANCH\"}" >/dev/null
+
+          TARGET_HEAD_REF="$(git ls-remote --symref "$TARGET_REPO" HEAD | awk '/^ref:/ {print $2}' | sed 's#refs/heads/##')"
+          echo "Target default branch after sync: ${TARGET_HEAD_REF:-unknown}"
